@@ -5,7 +5,7 @@ import sqlite3
 import uvicorn
 import os
 
-# --- DATABASE ---
+# --- DATABASE INIT ---
 def init_db():
     conn = sqlite3.connect("monitor.db", check_same_thread=False)
     cursor = conn.cursor()
@@ -37,7 +37,8 @@ def main(page: ft.Page):
                 lbl_hum.value = f"{row[1]}%"
                 lbl_gas.value = f"{row[2]} ppm"
                 page.update()
-        except: pass
+        except:
+            pass
 
     page.pubsub.subscribe(lambda _: atualizar_tela())
 
@@ -56,7 +57,8 @@ def main(page: ft.Page):
 async def update_data(request: Request):
     data = await request.json()
     cursor = db_conn.cursor()
-    cursor.execute("INSERT INTO leituras (temp, hum, gas) VALUES (?, ?, ?)", (data.get("temp"), data.get("hum"), data.get("gas")))
+    cursor.execute("INSERT INTO leituras (temp, hum, gas) VALUES (?, ?, ?)", 
+                   (data.get("temp"), data.get("hum"), data.get("gas")))
     db_conn.commit()
     flet_fastapi.send_all("/update", {"status": "ok"})
     return {"status": "success"}
