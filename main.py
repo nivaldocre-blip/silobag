@@ -5,7 +5,7 @@ import sqlite3
 import uvicorn
 import os
 
-# --- BANCO DE DADOS ---
+# --- DATABASE ---
 def init_db():
     conn = sqlite3.connect("monitor.db", check_same_thread=False)
     cursor = conn.cursor()
@@ -17,7 +17,6 @@ def init_db():
 db_conn = init_db()
 app = FastAPI()
 
-# --- LÓGICA DA TELA (FLET) ---
 def main(page: ft.Page):
     page.title = "Monitor Silo Bag"
     page.theme_mode = ft.ThemeMode.DARK
@@ -29,62 +28,39 @@ def main(page: ft.Page):
     lbl_gas = ft.Text("0 ppm", size=50, weight="bold", color="green")
 
     def atualizar_tela():
-        cursor = db_conn.cursor()
-        cursor.execute("SELECT temp, hum, gas FROM leituras ORDER BY id DESC LIMIT 1")
-        row = cursor.fetchone()
-        if row:
-            lbl_temp.value = f"{row[0]}°C"
-            lbl_hum.value = f"{row[1]}%"
-            lbl_gas.value = f"{row[2]} ppm"
-            page.update()
+        try:
+            cursor = db_conn.cursor()
+            cursor.execute("SELECT temp, hum, gas FROM leituras ORDER BY id DESC LIMIT 1")
+            row = cursor.fetchone()
+            if row:
+                lbl_temp.value = f"{row[0]}°C"
+                lbl_hum.value = f"{row[1]}%"
+                lbl_gas.value = f"{row[2]} ppm"
+                page.update()
+        except: pass
 
-    page.pubsub.subscribe(lambda msg: atualizar_tela())
-
-    # Layout Profissional em Cartões
-    def criar_card(titulo, valor, icon_name, icon_color):
-        return ft.Card(
-            content=ft.Container(
-                content=ft.Column([
-                    ft.Icon(icon_name, size=40, color=icon_color),
-                    ft.Text(titulo, size=16, color="grey"),
-                    valor,
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=30,
-                width=250,
-            ),
-            elevation=5
-        )
+    page.pubsub.subscribe(lambda _: atualizar_tela())
 
     page.add(
-        ft.Text("📊 Painel de Controle: Silo Bag #1", size=32, weight="bold"),
+        ft.Text("📊 Painel Silo Bag", size=32, weight="bold"),
         ft.Divider(),
-        ft.ResponsiveRow([
-            criar_card("Temperatura", lbl_temp, ft.icons.THERMOSTAT, "orange"),
-            criar_card("Umidade", lbl_hum, ft.icons.WATER_DROP, "blue"),
-            criar_card("Gás (CO2)", lbl_gas, ft.icons.CO2, "green"),
-        ], alignment=ft.MainAxisAlignment.CENTER),
-        ft.Container(height=30),
-        ft.ElevatedButton("Atualizar Histórico", on_click=lambda _: atualizar_tela(), icon=ft.icons.REFRESH)
+        ft.Column([
+            ft.Container(content=ft.Column([ft.Text("Temperatura"), lbl_temp]), bgcolor="#333333", padding=20, border_radius=10, width=300),
+            ft.Container(content=ft.Column([ft.Text("Umidade"), lbl_hum]), bgcolor="#333333", padding=20, border_radius=10, width=300),
+            ft.Container(content=ft.Column([ft.Text("Gas CO2"), lbl_gas]), bgcolor="#333333", padding=20, border_radius=10, width=300),
+        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
     )
     atualizar_tela()
 
-# --- ROTA QUE ACEITA DADOS DO ESP32 (POST) ---
 @app.post("/update")
 async def update_data(request: Request):
     data = await request.json()
-    
-    # Validação simples
-    if not all(k in data for k in ("temp", "hum", "gas")):
-        return {"status": "error", "message": "Faltam dados"}
-        
     cursor = db_conn.cursor()
-    cursor.execute("INSERT INTO leituras (temp, hum, gas) VALUES (?, ?, ?)", (data["temp"], data["hum"], data["gas"]))
+    cursor.execute("INSERT INTO leituras (temp, hum, gas) VALUES (?, ?, ?)", (data.get("temp"), data.get("hum"), data.get("gas")))
     db_conn.commit()
-    
-    flet_fastapi.send_all("/update", {"status": "update"})
-    return {"status": "success", "temp": data["temp"]}
+    flet_fastapi.send_all("/update", {"status": "ok"})
+    return {"status": "success"}
 
-# Integração Flet + FastAPI
 app.mount("/", flet_fastapi.app(main))
 
 if __name__ == "__main__":
