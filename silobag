@@ -22,10 +22,11 @@ def main(page: ft.Page):
     page.title = "Monitor Silo Bag"
     page.theme_mode = ft.ThemeMode.DARK
     page.padding = 20
+    page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
 
-    lbl_temp = ft.Text("0°C", size=40, weight="bold", color="orange")
-    lbl_hum = ft.Text("0%", size=40, weight="bold", color="blue")
-    lbl_gas = ft.Text("0 ppm", size=40, weight="bold", color="green")
+    lbl_temp = ft.Text("0°C", size=50, weight="bold", color="orange")
+    lbl_hum = ft.Text("0%", size=50, weight="bold", color="blue")
+    lbl_gas = ft.Text("0 ppm", size=50, weight="bold", color="green")
 
     def atualizar_tela():
         cursor = db_conn.cursor()
@@ -37,39 +38,51 @@ def main(page: ft.Page):
             lbl_gas.value = f"{row[2]} ppm"
             page.update()
 
-    # Essa função será chamada via PubSub quando o ESP32 enviar dados
-    def on_new_data(msg):
-        atualizar_tela()
+    page.pubsub.subscribe(lambda msg: atualizar_tela())
 
-    page.pubsub.subscribe(on_new_data)
+    # Layout Profissional em Cartões
+    def criar_card(titulo, valor, icon_name, icon_color):
+        return ft.Card(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Icon(icon_name, size=40, color=icon_color),
+                    ft.Text(titulo, size=16, color="grey"),
+                    valor,
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=30,
+                width=250,
+            ),
+            elevation=5
+        )
 
     page.add(
-        ft.Text("📊 Monitoramento Silo Bag", size=30, weight="bold"),
+        ft.Text("📊 Painel de Controle: Silo Bag #1", size=32, weight="bold"),
         ft.Divider(),
-        ft.Row([
-            ft.Card(content=ft.Container(content=ft.Column([ft.Text("Temperatura"), lbl_temp]), padding=20)),
-            ft.Card(content=ft.Container(content=ft.Column([ft.Text("Umidade"), lbl_hum]), padding=20)),
-            ft.Card(content=ft.Container(content=ft.Column([ft.Text("Gás (CO2)"), lbl_gas]), padding=20)),
+        ft.ResponsiveRow([
+            criar_card("Temperatura", lbl_temp, ft.icons.THERMOSTAT, "orange"),
+            criar_card("Umidade", lbl_hum, ft.icons.WATER_DROP, "blue"),
+            criar_card("Gás (CO2)", lbl_gas, ft.icons.CO2, "green"),
         ], alignment=ft.MainAxisAlignment.CENTER),
+        ft.Container(height=30),
+        ft.ElevatedButton("Atualizar Histórico", on_click=lambda _: atualizar_tela(), icon=ft.icons.REFRESH)
     )
     atualizar_tela()
 
-# --- ROTA PARA O ESP32 ENVIAR DADOS ---
+# --- ROTA QUE ACEITA DADOS DO ESP32 (POST) ---
 @app.post("/update")
 async def update_data(request: Request):
     data = await request.json()
-    temp = data.get("temp")
-    hum = data.get("hum")
-    gas = data.get("gas")
     
+    # Validação simples
+    if not all(k in data for k in ("temp", "hum", "gas")):
+        return {"status": "error", "message": "Faltam dados"}
+        
     cursor = db_conn.cursor()
-    cursor.execute("INSERT INTO leituras (temp, hum, gas) VALUES (?, ?, ?)", (temp, hum, gas))
+    cursor.execute("INSERT INTO leituras (temp, hum, gas) VALUES (?, ?, ?)", (data["temp"], data["hum"], data["gas"]))
     db_conn.commit()
     
-    # Avisa o Flet que tem dado novo para atualizar a tela
-    # Nota: Em produção com múltiplos usuários, usaríamos um identificador
-    flet_fastapi.send_all("/update", {"status": "ok"})
-    return {"status": "success"}
+    flet_fastapi.send_all("/update", {"status": "update"})
+    return {"status": "success", "temp": data["temp"]}
 
 # Integração Flet + FastAPI
 app.mount("/", flet_fastapi.app(main))
